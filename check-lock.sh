@@ -18,7 +18,7 @@ while read -r kind name version _; do
     ''|'#'*) continue ;;
     apt) found="$(dpkg-query -W -f='${Version}' "$name" 2>/dev/null || true)" ;;
     pip) found="$(/opt/venv/bin/pip list --format=freeze --disable-pip-version-check 2>/dev/null \
-        | awk -F'==' -v n="$name" 'tolower($1) == tolower(n) { print $2 }')" ;;
+        | awk -F'==' -v n="$name" '{ a = tolower($1); b = tolower(n); gsub(/[_.]/, "-", a); gsub(/[_.]/, "-", b) } a == b { print $2 }')" ;;
     dotnet) found="$(dotnet --list-runtimes 2>/dev/null | awk -v n="$name" '$1 == n { print $2 }' | head -1)" ;;
     link) if [ -e "$name" ] && [ "$(readlink "$name")" = "$version" ]; then found="$version"; else found="missing"; fi ;;
     model) ref="/opt/huggingface/hub/models--$(echo "$name" | sed 's#/#--#')/refs/main"
