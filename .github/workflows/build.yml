@@ -1,0 +1,108 @@
+name: build
+
+# Builds the base image. A pull request only builds and checks it (the Actions minutes of a public repository are
+# free); main also pushes it. The private repository that adds its job host pins the pushed digest.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - tools.lock
+      - check-lock.sh
+      - .github/workflows/build.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - tools.lock
+      - check-lock.sh
+      - .github/workflows/build.yml
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  # A push on main is never cancelled half way; a newer push to a pull request replaces the older build.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    # A build of changed packages took more than 45 minutes in the private repository; 90 leaves room for a slow day.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Read the runtime image
+        id: base
+        run: echo "runtime=$(awk '$1 == "image" && $2 == "runtime" { print $3 }' tools.lock)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      # The cache below and the push at the end both go to GHCR. A pull request from a fork has no write access, so
+      # it reads the cache only.
+      - name: Sign in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # The layers of every stage are cached (mode=max) in a package of their own, not the GitHub Actions cache,
+      # which is dropped after 7 days without a build. load puts the image into the runner's Docker for the checks.
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: |
+            RUNTIME_IMAGE=${{ steps.base.outputs.runtime }}
+            COMMIT=${{ github.sha }}
+          tags: media-studio-render-base:ci
+          load: true
+          # The push below is a plain docker push of the loaded image, which carries no attestation anyway.
+          provenance: false
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/media-studio-render-base-cache:layers
+          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=registry,ref=ghcr.io/{0}/media-studio-render-base-cache:layers,mode=max', github.repository_owner) || '' }}
+      - name: Report the size
+        run: |
+          bytes="$(docker image inspect media-studio-render-base:ci --format '{{.Size}}')"
+          echo "Image size: $(numfmt --to=iec-i --suffix=B "$bytes") ($bytes bytes, uncompressed)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Smoke check
+        run: |
+          docker run --rm media-studio-render-base:ci sh -c '
+            ffmpeg -version | head -1
+            yt-dlp --version
+            python3 -c "import faster_whisper; print(\"faster_whisper\", faster_whisper.__version__)"
+            cat /opt/media-studio-render-base/VERSION'
+      - name: Check the lock against the image
+        run: |
+          status=0
+          docker run --rm -v "$PWD/check-lock.sh:/check-lock.sh:ro" media-studio-render-base:ci sh /check-lock.sh > check-lock.txt || status=$?
+          cat check-lock.txt
+          { echo '```'; cat check-lock.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      # Only an image that passed the checks, and only from main. The private repository pins the digest, so the
+      # digest goes first into the summary; the tags are for people.
+      - name: Push to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/media-studio-render-base"
+          short="${GITHUB_SHA:0:12}"
+          docker tag media-studio-render-base:ci "$image:sha-$short"
+          docker tag media-studio-render-base:ci "$image:latest"
+          docker push "$image:sha-$short"
+          docker push "$image:latest"
+          digest="$(docker image inspect "$image:sha-$short" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep "^$image@" | head -1)"
+          [ -n "$digest" ] || { echo "No digest found for the pushed image" >&2; exit 1; }
+          {
+            echo "## Pushed image"
+            echo
+            echo "Pin this in the Dockerfile of the private repository:"
+            echo
+            echo '```'
+            echo "$digest"
+            echo '```'
+            echo
+            echo "Tags: \`sha-$short\`, \`latest\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
