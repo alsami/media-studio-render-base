@@ -37,7 +37,7 @@ pip      pillow                   13.0.0
 pip      scipy                    1.18.1
 pip      anyio                    4.16.0
 # Not 19: it dropped the metadata_errors argument of av.open, which faster-whisper 1.2.1 passes, so every
-# transcription failed (the first Truthbit run, 14 Nov 2026). Raise it together with faster-whisper.
+# transcription failed (a first run, 14 Nov 2026). Raise it together with faster-whisper.
 pip      av                       18.1.0
 pip      click                    8.5.1
 pip      ctranslate2              4.9.0
@@ -59,7 +59,7 @@ pip      tqdm                     4.70.1
 pip      truststore               0.10.5
 pip      typing-extensions        4.16.0
 # yt-dlp as the skills install it ("yt-dlp[default]", python3 -m yt_dlp), at the versions of its own "pin"
-# and "pin-deno" extras; deno is the JavaScript runtime Truthbit's tb_fetch.py relies on (yt-dlp's default).
+# and "pin-deno" extras; deno is the JavaScript runtime the downloads rely on (yt-dlp's default).
 # A YouTube change means raising yt-dlp here and a new image (the owner's choice, 2026-11-13).
 pip      yt-dlp                   2026.11.23
 pip      yt-dlp-ejs               0.8.0
