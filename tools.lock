@@ -1,0 +1,82 @@
+# Every version in the render base image. The Dockerfile installs exactly these, check-lock.sh proves the built
+# image holds them, and the image carries this file at /opt/media-studio-render-base/tools.lock.
+# One tool per line: <kind> <name> <version>. A change here is a new image version and a reason
+# to run the golden sets of the users of the image again. How to update: README.md.
+# This file is the only source of these versions. The one build input that is not here, the SDK image for
+# building the job host, lives in the private repository that builds the host, because only that build needs it.
+
+# Build input. The runtime image is pinned by digest; the Ubuntu snapshot freezes the archive,
+# so the dependencies of the packages below are the same in every build too.
+image    runtime    mcr.microsoft.com/dotnet/runtime:11.0.0-resolute-amd64@sha256:68bbc1e7045ed6717c119dfd5e4f1a53ed520a3ed2f846e7aafc43d5b303beee
+snapshot ubuntu     20261113T000000Z
+
+# The .NET runtime of the job host, from the runtime image.
+dotnet   Microsoft.NETCore.App    11.0.0
+
+# Ubuntu 26.04 packages.
+apt      ffmpeg                   7:8.0.1-3ubuntu2
+apt      python3                  3.14.3-0ubuntu2
+apt      python3.14               3.14.4-1ubuntu0.2
+apt      python3-venv             3.14.3-0ubuntu2
+# Programs the wave-1 scripts call besides ffmpeg and Python (B-055): convert in bf_assemble.py (check.jpg),
+# sox in pp_assemble.py (the whoosh), node for Pixel Panik's yt-dlp (--js-runtimes node), Montserrat for
+# pp_cover.py and the captions of pp_assemble.py (SIL Open Font License 1.1, which allows shipping it).
+apt      imagemagick              8:7.1.2.18+dfsg1-1
+apt      sox                      14.7.0.9+ds1-1
+apt      nodejs                   22.22.1+dfsg+~cs22.19.15-1ubuntu1
+apt      fonts-montserrat         9.000-5
+
+# Python packages the wave-1 scripts import (faster_whisper, numpy, cv2, PIL), with every dependency,
+# installed without resolving so nothing unlisted comes in.
+pip      faster-whisper           1.2.1
+pip      numpy                    2.5.4
+pip      opencv-python-headless   5.0.0.93
+pip      pillow                   13.0.0
+# ASMR's dehum.py and cutstart.py import scipy (B-144), at the version asmr-skills' CI pins (ci/requirements.txt).
+# It needs only numpy (>=2.0.0, <2.8).
+pip      scipy                    1.18.1
+pip      anyio                    4.16.0
+# Not 19: it dropped the metadata_errors argument of av.open, which faster-whisper 1.2.1 passes, so every
+# transcription failed (the first Truthbit run, 14 Nov 2026). Raise it together with faster-whisper.
+pip      av                       18.1.0
+pip      click                    8.5.1
+pip      ctranslate2              4.9.0
+pip      filelock                 4.2.10
+pip      flatbuffers              25.12.19
+pip      fsspec                   2026.9.0
+pip      h11                      0.16.0
+pip      hf-xet                   1.8.0
+pip      httpcore2                2.16.0
+pip      httpx2                   2.16.0
+pip      huggingface-hub          2.4.0
+pip      idna                     3.20
+pip      onnxruntime              1.32.0
+pip      packaging                26.3
+pip      protobuf                 7.36.2
+pip      pyyaml                   6.0.3
+pip      tokenizers               0.23.3
+pip      tqdm                     4.70.1
+pip      truststore               0.10.5
+pip      typing-extensions        4.16.0
+# yt-dlp as the skills install it ("yt-dlp[default]", python3 -m yt_dlp), at the versions of its own "pin"
+# and "pin-deno" extras; deno is the JavaScript runtime Truthbit's tb_fetch.py relies on (yt-dlp's default).
+# A YouTube change means raising yt-dlp here and a new image (the owner's choice, 2026-11-13).
+pip      yt-dlp                   2026.11.23
+pip      yt-dlp-ejs               0.8.0
+pip      deno                     2.9.8
+pip      brotli                   1.2.1
+pip      certifi                  2026.10.23
+pip      charset-normalizer       3.5.2
+pip      mutagen                  1.48.1
+pip      pycryptodomex            3.24.2
+pip      requests                 2.34.2
+pip      urllib3                  2.8.0
+pip      websockets               17.4
+# The installer itself, as python3-venv brings it.
+pip      pip                      25.1.1
+
+# pp_cover.py reads Montserrat from the folder the Higgsfield sandbox has; it links to fonts-montserrat.
+link     /usr/share/fonts/truetype/higgsfield/Montserrat-ExtraBold.ttf    /usr/share/fonts/truetype/montserrat/Montserrat-ExtraBold.ttf
+
+# faster-whisper small.en, baked in so a render never downloads it.
+model    Systran/faster-whisper-small.en    d1d751a5f8271d482d14ca55d9e2deeebbae577f
